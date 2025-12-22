@@ -1,0 +1,40 @@
+#!/usr/bin/env python3
+
+"""
+Module docstring: A brief description of what this script or module does.
+"""
+
+# Standard library imports
+import os
+import sys
+
+# Third-party library imports (if any)
+# import requests
+
+# Local application imports (if any)
+# from my_package import my_module
+
+def main():
+    """
+    Main function to encapsulate the primary logic of the script.
+    """
+    print("Hello from the main function!")
+    # Add your script's core logic here
+
+def some_helper_function(param1, param2):
+    """
+    A helper function with a clear purpose and parameters.
+
+    Args:
+        param1: Description of param1.
+        param2: Description of param2.
+
+    Returns:
+        Description of what the function returns.
+    """
+    return param1 + param2
+
+if __name__ == "__main__":
+    # This block ensures that main() is called only when the script is executed directly,
+    # not when it's imported as a module into another script.
+    main()

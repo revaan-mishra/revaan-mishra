@@ -1,0 +1,124 @@
+# Jira Issue Details (PF Tools Screen Compatible)
+# Pattern expected:
+#   def your_function_name(your_arguments):
+#       ...
+#   if __name__ == "__main__":
+#       result = your_function_name(your_arguments)
+#       print(result)
+
+
+import requests
+import json
+import base64
+from typing import Dict, Any, List, Optional
+
+
+# Set these for your Jira Cloud site and credentials
+JIRA_BASE_URL = 'https://your-domain.atlassian.net'  # e.g., https://example.atlassian.net
+JIRA_USER_EMAIL = 'user@example.com'  # Atlassian account email
+JIRA_API_TOKEN = 'your_jira_api_token_here'  # Create at https://id.atlassian.com/manage-profile/security/api-tokens
+
+
+def _auth_headers() -> Dict[str, str]:
+    # Jira Cloud: Basic auth = base64(email:api_token)
+    token_bytes = f'{JIRA_USER_EMAIL}:{JIRA_API_TOKEN}'.encode('utf-8')
+    b64 = base64.b64encode(token_bytes).decode('utf-8')
+    return {
+        'Authorization': f'Basic {b64}',
+        'Accept': 'application/json',
+        'Content-Type': 'application/json'
+    }
+
+
+def _get_json(url: str, headers: Dict[str, str]) -> Any:
+    resp = requests.get(url, headers=headers)
+    if 200 <= resp.status_code < 300:
+        return resp.json()
+    raise Exception(f'HTTP {resp.status_code} for {url}: {resp.text}')
+
+
+def _build_expand(expands: List[str]) -> str:
+    if not expands:
+        return ''
+    # Comma-separated list, e.g., expand=renderedFields,names,changelog
+    return 'expand=' + ','.join(expands)
+
+
+def _shape_issue(issue: Dict[str, Any]) -> Dict[str, Any]:
+    # Keep the full raw issue but also extract a compact summary for quick use
+    fields = issue.get('fields', {})
+    project = fields.get('project') or {}
+    issuetype = fields.get('issuetype') or {}
+    status = fields.get('status') or {}
+    priority = fields.get('priority') or {}
+    reporter = fields.get('reporter') or {}
+    assignee = fields.get('assignee') or {}
+    parent = fields.get('parent') or {}
+    compact = {
+        'id': issue.get('id'),
+        'key': issue.get('key'),
+        'self': issue.get('self'),
+        'summary': fields.get('summary'),
+        'description': fields.get('description'),
+        'status': {'name': status.get('name'), 'id': status.get('id')},
+        'issuetype': {'name': issuetype.get('name'), 'id': issuetype.get('id')},
+        'priority': {'name': priority.get('name'), 'id': priority.get('id')} if priority else None,
+        'project': {'key': project.get('key'), 'name': project.get('name'), 'id': project.get('id')},
+        'reporter': {'accountId': reporter.get('accountId'), 'displayName': reporter.get('displayName')} if reporter else None,
+        'assignee': {'accountId': assignee.get('accountId'), 'displayName': assignee.get('displayName')} if assignee else None,
+        'parent': {'key': parent.get('key'), 'id': parent.get('id')} if parent else None,
+        'created': fields.get('created'),
+        'updated': fields.get('updated'),
+        'resolutiondate': fields.get('resolutiondate'),
+        'labels': fields.get('labels') or [],
+        'fixVersions': [{'name': fv.get('name')} for fv in (fields.get('fixVersions') or [])],
+        'components': [{'name': c.get('name')} for c in (fields.get('components') or [])]
+    }
+    shaped = {
+        'compact': compact,
+        'raw': issue  # include the full raw issue for completeness
+    }
+    return shaped
+
+
+def jira_get_issue_details(
+    issue_key: str,
+    expands: str = 'renderedFields,names,changelog,transitions,editmeta,versionedRepresentations'  # adjust as needed
+) -> str:
+    """
+    Fetches a Jira issue with optional expansions.
+    Returns a JSON string with structure: {'issue': {'compact': {...}, 'raw': {...}}} or {'error': '...'}.
+    """
+    if not issue_key:
+        return json.dumps({'error': 'Missing issue_key'})
+
+    if not (JIRA_BASE_URL and JIRA_USER_EMAIL and JIRA_API_TOKEN):
+        return json.dumps({'error': 'Missing Jira configuration (base URL, email, or API token).'})
+
+    headers = _auth_headers()
+    expand_list = [e.strip() for e in expands.split(',') if e.strip()] if expands else []
+    expand_qs = _build_expand(expand_list)
+    url = f'{JIRA_BASE_URL}/rest/api/3/issue/{issue_key}'
+    if expand_qs:
+        url = f'{url}?{expand_qs}'
+
+    try:
+        issue = _get_json(url, headers)
+    except Exception as e:
+        return json.dumps({'error': 'jira_issue_fetch_failed', 'details': str(e)})
+
+    shaped = _shape_issue(issue)
+
+    # Optionally pull comments, attachments, worklogs via separate endpoints if not included by expands
+    # Comments (if not expanded via renderedFields/names):
+    # comments = _get_json(f'{JIRA_BASE_URL}/rest/api/3/issue/{issue_key}/comment', headers)
+    # Attachments are within fields.attachment when available.
+    # Worklogs:
+    # worklogs = _get_json(f'{JIRA_BASE_URL}/rest/api/3/issue/{issue_key}/worklog', headers)
+
+    return json.dumps({'issue': shaped}, ensure_ascii=False)
+
+
+if __name__ == "__main__":
+    # Example usage: replace with your own domain, email, token, and issue key
+    print(jira_get_issue_details(issue_key='PROJ-123'))
